@@ -5,6 +5,8 @@ from queue import Empty
 from turtle import shape
 from typing import List
 
+from torch import dropout
+
 import network as nt
 import config as cf
 import content as ct
@@ -16,7 +18,7 @@ import numpy as np
 from collections import deque
 import tensorflow as tf
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import Dense, Dropout
 from tensorflow.keras.optimizers import Adam
 import matplotlib.pyplot as plt
 
@@ -29,17 +31,25 @@ class DQN(Model):
         super(DQN, self).__init__()
 
         self.h1 = Dense(3 * state_dim, activation='relu')
+        self.d1 = Dropout(rate = 0.2)
         self.h2 = Dense(9 * state_dim, activation='relu')
+        self.d2 = Dropout(rate = 0.2)
         self.h3 = Dense(6 * state_dim, activation='relu')
+        self.d3 = Dropout(rate = 0.2)
         self.h4 = Dense(2 * state_dim, activation='relu')
+        self.d4 = Dropout(rate = 0.2)
         self.h5 = Dense(state_dim, activation='relu')
         self.q = Dense(action_n, activation='linear')
 
     def call(self, x):
         x = self.h1(x)
+        x = self.d1(x)
         x = self.h2(x)
+        x = self.d2(x)
         x = self.h3(x)
+        x = self.d3(x)
         x = self.h4(x)
+        x = self.d4(x)
         x = self.h5(x)
         q = self.q(x)
         return q
@@ -85,7 +95,7 @@ class DQNagent():
     
         # DQN 하이퍼파라미터
         self.GAMMA = 0.95
-        self.BATCH_SIZE = 64
+        self.BATCH_SIZE = 4 #64
         self.BUFFER_SIZE = 20000
         self.DQN_LEARNING_RATE = 0.001
         self.TAU = 0.001
@@ -241,17 +251,16 @@ class DQNagent():
         # @ reset 할 때 고려
         round_day =  self.network.days[self.round_nb] % 7
         requested_content, path = self.network.request_and_get_path(round_day)
-
+        nodeID = path[0]
         if len(path) < 5:
             self.cache_hit_cnt += 1
             # 요청들어온 컨테츠가 이미 storage에 있을 때 뒤로 빼줌.
             ct.updatequeue(path,requested_content,self.network.microBSList,self.network.BSList,self.network.dataCenter)
-
-        nodeID = path[0]
-
+            
         # ! act paratmeter : nodeID, requested_content, action
         #print("act 실행")
-        self.act(nodeID, requested_content, action)
+        else:
+            self.act(nodeID, requested_content, action)
 
 
 
@@ -449,11 +458,12 @@ class DQNagent():
         Return the reward.
         The reward is:
         
-            Reward = a*(d_core - d_cache) - b*coverage_node
+            Reward = a*(d_core - d_cache) - b*(#ofnode - coverage_node)
 
             a,b = 임의로 정해주자 실험적으로 구하자
             d_core  : 네트워크 코어에서 해당 컨텐츠를 전송 받을 경우에 예상되는 지연 시간.
             d_cache : 가장 가까운 레벨의 캐시 서버에서 해당 컨텐츠를 받아올 때 걸리는 실제 소요 시간
+            cf.NB_NODES : 노드의 갯수
             c_node : agent 저장할 때 contents가 있는 station이 포괄하는 device의 갯수
         """
 
@@ -479,7 +489,6 @@ class DQNagent():
 
         self.d_core = self.get_d_core(nodeID, requested_content)
         self.d_cache = self.get_d_cache(nodeID, requested_content)
-
         self.c_node = self.get_c_node()
 
 
